@@ -29,6 +29,10 @@ Running the script without any command-line arguments will display a simple over
 - `-t`: toggle to SOC temperature
 - `-f`: toggle to Fan rpm speed
 - `-p`: toggle to show ARM Core power consumption (pcore)
+- `-j`: toggle to show Ring Oscillator 1 in continuous mode
+- `-k`: toggle to show Ring Oscillator 2 in continuous mode
+- `-l`: toggle to show Ring Oscillator 3 in continuous mode
+- `-b`: toggle to show Ring Oscillators in Summary mode
 - `-h`: prints a short summary of the command-line switches
 
 The default values and toggle states can be modified directly inside the script; 0 to disable, 1 to enable.
@@ -43,6 +47,17 @@ Some options are hidden and can be toggled only inside the script:
 
 ## Changelog
 
+v1.11
+   - Added battery charging status
+   - Made Summary layout more compact
+   - Fixed temperature toggle in Summary mode
+   - Added all PMIC voltages and total power consumption
+   - Added PMIC temperature
+   - Hidden PMIC power reset bits if off
+   - Memory min and max clocks
+   - Added PWM value and percentage for fan
+   . Added Ring Oscillators section in Summary mode
+   - Added toggles for each Ring Oscillator in Continuous mode
 v1.1
    - First release with new features
    - Support for Pi5 and PMIC

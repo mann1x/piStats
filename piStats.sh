@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PISTATS_REL=1.1
+PISTATS_REL=1.11
 
 ### Defauts
 
@@ -9,6 +9,7 @@ DELAY=8
 
 # Inter delay between stats pooling
 IDELAY=0.2
+IDELAYSMALL=0.1
 
 # Default toggles
 CPUFREQ=0
@@ -18,6 +19,10 @@ VERBOSE=0
 TEMP=1
 FAN=1
 POWER=1
+RING_OSC=1
+ROSC1=0
+ROSC2=0
+ROSC3=0
 
 # Hidden toggles
 GPU_SPLIT=0
@@ -27,7 +32,7 @@ PMIC_VOLTAGES=1
 ### Arguments
 CONTINUOUS=0
 
-while getopts d:i:cqorvtfph flag
+while getopts d:i:cqorvtfpjklbh flag
 do
     case "${flag}" in
         d) DELAY=${OPTARG};;
@@ -40,11 +45,15 @@ do
         t) TEMP=$((1-TEMP));;
         f) FAN=$((1-FAN));;
         p) POWER=$((1-POWER));;
+        j) ROSC1=$((1-ROSC1));;
+        k) ROSC2=$((1-ROSC2));;
+        l) ROSC3=$((1-ROSC3));;
+        b) RING_OSC=$((1-RING_OSC));;
         h) echo -e "piStats v$PISTATS_REL\n"
            echo -e "Usage: piStats [OPTIONS]...\n"
            echo -e "Options:\n"
-           echo -e "-c: continuous output mode, default is summary"
-           echo -e "-d <NN>: CONTINUOUS mode, delay in seconds between updates (default 8 seconds)"
+           echo -e "-c: Continuous output mode, default is Summary"
+           echo -e "-d <NN>: set continuous mode delay in seconds between updates (default 8 seconds)"
            echo -e "-i <NN>: delay in seconds between stats pooling (default 0.2 seconds)"
            echo -e "-v: toggle verbose mode for summary mode"
            echo -e "-r: toggle to show ARM Core voltage (vcore)"
@@ -53,6 +62,10 @@ do
            echo -e "-t: toggle to show SOC temperature"
            echo -e "-f: toggle to show Fan rpm speed"
            echo -e "-p: toggle to show ARM Core power consumption (pcore)"
+           echo -e "-j: toggle to show Ring Oscillator 1 in continuous mode"
+           echo -e "-k: toggle to show Ring Oscillator 2 in continuous mode"
+           echo -e "-l: toggle to show Ring Oscillator 3 in continuous mode"
+           echo -e "-b: toggle to show Ring Oscillators in Summary mode"
            echo -e "-h: will show this help screen"
            exit
            ;;
@@ -68,6 +81,7 @@ YELLOW='\e[1;33m'
 PURPLE='\e[1;35m'
 CYAN='\e[0;36m'
 ORANGE='\e[0;33m'
+GREEN='\e[0;32m'
 PURPLE='\e[1;35m'
 RESET='\e[0m'
 
@@ -78,7 +92,7 @@ hostname=$(/usr/bin/uname -n)
 kernrel=$(/usr/bin/uname -r)
 kernver=$(/usr/bin/uname -v)
 modelname=${modelname_tree:10:4}
-fansys=/sys/devices/platform/cooling_fan/hwmon/*/fan1_input
+fansys=/sys/devices/platform/cooling_fan/hwmon/*
 fandev=/sys/devices/platform/cooling_fan/
 
 # Detection of Pi 4 &  5
@@ -167,6 +181,11 @@ if ((CONTINUOUS)); then
     if ((PCORE)); then echo -en "pcore     "; fi
     if ((VCORE)); then echo -en "vcore     "; fi
     if ((VSOC)); then echo -en "vsoc     "; fi
+    arr_odata=( )
+    if ((ROSC1)); then arr_odata+=('1'); echo -en "r1clk   r1volt   r1temp "; fi
+    if ((ROSC2)); then arr_odata+=('2'); echo -en "r2clk   r2volt   r2temp "; fi
+    if ((ROSC3)); then arr_odata+=('3'); echo -en "r3clk   r3volt   r3temp "; fi
+
     echo -e "${RESET}"
 
     while true; do
@@ -179,7 +198,22 @@ if ((CONTINUOUS)); then
 
         if ((TEMP)); then
             temp=$(vcgencmd measure_temp); temp=${temp:5:4}
-            sleep $IDELAY
+                    sleep $IDELAY
+        fi
+
+        if ((ROSC1)) || ((ROSC2)) || ((ROSC3)); then
+            roscvals=""
+            for SRC in "${arr_odata[@]}"; do
+                ovalue=$(vcgencmd read_ring_osc "${SRC}")
+                    REGEX_OVALUE=".*\(${SRC}\)=(.*)MHz \(@(.*)V\) \((.*)'C\)"
+                    if [[ $ovalue =~ $REGEX_OVALUE ]]; then
+                    ring_clock=${BASH_REMATCH[1]};
+                    ring_volt=${BASH_REMATCH[2]};
+                    ring_temp=${BASH_REMATCH[3]};
+                fi
+                    roscvals+=$(printf "%-7s %-8s %-7s" "$ring_clock" "$ring_volt" "$ring_temp")
+                sleep $IDELAY;
+            done
         fi
 
         arm_clock=$(vcgencmd measure_clock arm); arm_clock=$((${arm_clock#*=} / 1000000))
@@ -193,10 +227,10 @@ if ((CONTINUOUS)); then
             if [[ $pmic_corev =~ $REGEX_PCOREV ]]; then pcore_voltage=${BASH_REMATCH[1]}; fi
             if [[ $pmic_corea =~ $REGEX_PCOREA ]]; then pcore_current=${BASH_REMATCH[1]}; fi
             core_power=$(echo "$pcore_voltage $pcore_current" | awk '{printf "%.4f", $1*$2}')
-        fi
+            fi
 
-        if ((VCORE)); then
-            core_voltage=$(vcgencmd measure_volts core); core_voltage=${core_voltage:5:6};
+            if ((VCORE)); then
+                core_voltage=$(vcgencmd measure_volts core); core_voltage=${core_voltage:5:6};
             sleep $IDELAY
         fi
 
@@ -204,7 +238,7 @@ if ((CONTINUOUS)); then
         if ((VCORE)) || ((VSOC)); then sleep $IDELAY; fi
 
         if ((FAN)); then
-            fanrpm=$(cat $fansys 2>/dev/null)
+            fanrpm=$(cat $fansys/fan1_input 2>/dev/null)
             sleep $IDELAY
         fi
 
@@ -214,7 +248,9 @@ if ((CONTINUOUS)); then
         if ((FAN)); then printf "%-7s " "$fanrpm"; fi
         if ((PCORE)); then printf "%-9s " "$core_power"; fi
         if ((VCORE)); then printf "%-9s " "$core_voltage"; fi
-        if ((VSOC)); then printf "%-9s " "$core_uncached"; fi
+
+        if ((ROSC1)) || ((ROSC2)) || ((ROSC3)); then echo -ne $roscvals; fi
+
         echo -en "\n"
 
         sleep $DELAY
@@ -223,9 +259,6 @@ if ((CONTINUOUS)); then
 # ...otherwise, print stats once.
 
 else
-
-    # Pi5 PMIC Reset bit
-    if ((pi5)) && ((PMIC)); then pmic_reset=$(hexdump -s 0 -n 1 -e '1/1 "%08x" "\n"' < /proc/device-tree/chosen/power/power_reset); fi
 
     # Kernel scaling scheduler clocks
     if ((CPUFREQ)); then
@@ -239,14 +272,6 @@ else
 
     # CPU temperature.
     temp=$(vcgencmd measure_temp); temp=${temp:5:4}
-    # Different colors for high temperatures to alert user.
-    if [[ 70 < $temp ]]; then
-        if [[ $temp > 80 ]]; then
-            temp="${RED}$temp"     # 80+ C
-        else
-            temp="${YELLOW}$temp"  # 70-80 C
-        fi
-    fi
 
     # Clock speeds.
     arr_clocks=( 'arm' 'core' )
@@ -265,7 +290,7 @@ else
     if ((pi5)) && ((FAN)); then
         # Fan rpm.
         sleep $IDELAY
-        fanrpm=$(cat $fansys 2>/dev/null)
+        fanrpm=$(cat $fansys/fan1_input 2>/dev/null)
     fi
 
     # Check command-line flag for additional verbosity.
@@ -276,19 +301,42 @@ else
            soc_voltage=$(vcgencmd measure_volts uncached); soc_voltage=${soc_voltage:5:6}
         fi
 
-        arr_gclocks=( 'isp' 'v3d' )
+        # PMIC temperature.
+        if ( ((pi4)) || ((pi5)) ) && ((PMIC)); then
+           sleep $IDELAYSMALL
+           pmic_temp=$(vcgencmd measure_temp pmic); pmic_temp=${pmic_temp:5:4}
+        fi
+
+        if ((pi5)) && ((FAN)); then
+            # Fan rpm.
+            fanpwm=$(cat $fansys/pwm1 2>/dev/null)
+            fanperc=$((fanpwm * 100 / 255))
+            sleep $IDELAYSMALL
+        fi
+
+
+        # Additional clock speeds and clock settings.
+        arr_gclocks=( 'isp' 'v3d' 'sdram')
+
         if ((h264block)) then arr_gclocks+=('h264'); fi
         if ((hevcblock)) then arr_gclocks+=('hevc'); fi
-        # Additional GPU clock speeds.
+
         for SRC in "${arr_gclocks[@]}"; do
-            clock=$(vcgencmd measure_clock $SRC)
-            eval "$SRC"_clock=$((${clock#*=} / 1000000))
+            if [ SRC != 'sdram' ]; then
+                clock=$(vcgencmd measure_clock $SRC)
+                eval "$SRC"_clock=$((${clock#*=} / 1000000))
+            fi
+            eval "$SRC"_clock_min=$(vcgencmd get_config "${SRC}_freq_min" | cut -d "=" -f 2)
+            if [ "$SRC"_clock_min == "0" ]; then "$SRC"_clock_min = "N/A"; fi
+            eval "$SRC"_clock_max=$(vcgencmd get_config "${SRC}_freq" | cut -d "=" -f 2)
+            if [ "$SRC"_clock_max == "0" ]; then "$SRC"_clock_max = "N/A"; fi
+            sleep $IDELAYSMALL
         done
 
         # Additional SDRAM voltages.
         for SRC in sdram_c sdram_i sdram_p; do
             voltage=$(vcgencmd measure_volts $SRC)
-            eval "$SRC"_voltage=${voltage:5:6}
+            eval "$SRC"_voltage=${voltage:5:4}
         done
 
         # SD card clock speed.
@@ -300,27 +348,18 @@ else
             eval "$SRC"_mem=${mem//[!0-9]/}
         done
 
-        # Clocks min/max
-        if ((hevcblock)); then
-            hevc_clock_max=$(vcgencmd get_config hevc_freq); hevc_clock_max=${hevc_clock_max:10:4};
-            hevc_clock_min=$(vcgencmd get_config hevc_freq_min); hevc_clock_min=${hevc_clock_min:14:4};
-        fi
-        if ((h264block)); then
-            h264_clock_max=$(vcgencmd get_config h264_freq); h264_clock_max=${h264_clock_max:10:4};
-            h264_clock_min=$(vcgencmd get_config h264_freq_min); h264_clock_min=${h264_clock_min:14:4};
-        fi
-
-        isp_clock_max=$(vcgencmd get_config isp_freq); isp_clock_max=${isp_clock_max:9:4};
-        isp_clock_min=$(vcgencmd get_config isp_freq_min); isp_clock_min=${isp_clock_min:13:4};
-        v3d_clock_max=$(vcgencmd get_config v3d_freq); v3d_clock_max=${v3d_clock_max:9:4};
-        v3d_clock_min=$(vcgencmd get_config v3d_freq_min); v3d_clock_min=${v3d_clock_min:13:4};
-
+        # OverVoltage
         over_voltage=$(vcgencmd get_config over_voltage); over_voltage=${over_voltage:13:1};
         over_voltage_delta=$(vcgencmd get_config over_voltage_delta); over_voltage_delta=${over_voltage_delta:19:5};
         over_voltage_delta=$((${over_voltage_delta#*=} / 1000))
         over_voltage_min=$(vcgencmd get_config over_voltage_min); over_voltage_min=${over_voltage_min:17:1};
+
+        # Pi5 PMIC Reset bit
+        if ((pi5)) && ((PMIC)); then pmic_reset=$(hexdump -s 0 -n 1 -e '1/1 "%08x" "\n"' < /proc/device-tree/chosen/power/power_reset); fi
+
     fi
 
+    # CPU and Core clock settings
     arm_clock_max=$(vcgencmd get_config arm_freq); arm_clock_max=${arm_clock_max:9:4};
     arm_clock_min=$(vcgencmd get_config arm_freq_min); arm_clock_min=${arm_clock_min:13:4};
     core_clock_max=$(vcgencmd get_config core_freq); core_clock_max=${core_clock_max:10:4};
@@ -328,9 +367,23 @@ else
 
     # Final output.
 
-    echo -e "\n${PURPLE}temp${RESET}"
-    if ((TEMP)); then printf "%s C" "$temp"; fi
-    if ((FAN)); then printf " (%s rpm)" "$fanrpm"; fi
+    printf "${PURPLE}temp${RESET}"
+    if ((FAN)); then printf "                  ${PURPLE}fan            fan pwm${RESET}\n"; fi
+
+    if ((TEMP)); then
+        printf "${GRAY}cpu:${RESET}  "
+
+        # Different colors for high temperatures to alert user.
+        if [[ 70 < $temp ]]; then
+            if [[ $temp > 80 ]]; then
+                echo -ne "${RED}"     # Very High
+            else
+                echo -ne "${YELLOW}"  # High
+            fi
+        fi
+        printf "%-10s${RESET}" "$temp C";
+        if ((FAN)); then printf "      %-4s rpm       %-3s ${GRAY}[%-2s %%]${RESET}" "$fanrpm" "$fanpwm" "$fanperc"; fi
+    fi
 
     echo -en "\n"
 
@@ -344,56 +397,100 @@ else
 
         printf "${GRAY}isp:${RESET}  %-10s      %-10s     %-10s\n" "$isp_clock MHz" "$isp_clock_min MHz" "$isp_clock_max MHz"
         printf "${GRAY}v3d:${RESET}  %-10s      %-10s     %-10s\n" "$v3d_clock MHz" "$v3d_clock_min MHz" "$v3d_clock_max MHz"
-        printf "${GRAY}sd${RESET}    %-10s\n" "$sd_clock MHz"
+        printf "${GRAY}ram:${RESET}  %-10s      %-10s     %-10s\n" "" "$sdram_clock_min MHz" "$sdram_clock_max MHz"
+        printf "${GRAY}sd:${RESET}   %-10s\n"                      "$sd_clock MHz"
 
         if ((CPUFREQ)); then
             echo -e "${GRAY}kern:${RESET} $scaling_freq/$cpuinfo_freq MHz"
         fi
     fi
 
-    echo -e "\n${PURPLE}voltages${RESET}"
+    printf "\n${PURPLE}voltages${RESET}"
+
+        if ([ "$over_voltage_delta" != "0" ] || [ "$over_voltage" != "0" ] || [ "$over_voltage_min" != "0" ]) && ((VERBOSE)); then
+            printf "${YELLOW}          OC ${GRAY}(ov set - min - delta): ${ORANGE}%s${GRAY}-${RESET}${ORANGE}%s${GRAY}-${RESET}${GREEN}%s${RESET}\n" "$over_voltage" "$over_voltage_min" "$over_voltage_delta mV"
+    else
+        printf "\n"
+        fi
+
     if ((VCORE)); then printf "${GRAY}core:${RESET} %-11s " "$core_voltage V"; fi
 
     if ((VERBOSE)); then
 
-        printf "${GRAY}mem (core - i/o - phy):${RESET} %-8s - %-8s - %-8s\n" "$sdram_c_voltage V" "$sdram_i_voltage V" "$sdram_p_voltage V"
+        printf "${GRAY}   mem (core - i/o - phy):${RESET} %-4s${GRAY}-${RESET}%-4s${GRAY}-${RESET}%-4s V\n" "$sdram_c_voltage" "$sdram_i_voltage" "$sdram_p_voltage"
 
         if ((pi4)) || ((pi5)); then printf "${GRAY}soc:${RESET}  %-11s\n" "$soc_voltage V"; fi
 
-        if [ "$over_voltage_delta" != "0" ] || [ "$over_voltage" != "0" ] || [ "$over_voltage_min" != "0" ]; then
-            echo -e "\n${PURPLE}over voltage${RESET}"
-            printf "${GRAY}%-7s${RESET}  %-8s\n" "delta:" "$over_voltage_delta mV"
-            printf "${GRAY}%-7s${RESET}  %-8s\n" "static:" "$over_voltage"
-            printf "${GRAY}%-7s${RESET}  %-8s\n" "min:" "$over_voltage_min"
+        if ((RING_OSC)); then
+
+            printf "\n${PURPLE}ring oscillators         ${GRAY}volt        temp${RESET}\n"
+
+            arr_odata=( '1' '2' '3')
+            for SRC in "${arr_odata[@]}"; do
+                sleep $IDELAY;
+                ovalue=$(vcgencmd read_ring_osc "${SRC}")
+                    REGEX_OVALUE=".*\(${SRC}\)=(.*)MHz \(@(.*)V\) \((.*)'C\)"
+                    if [[ $ovalue =~ $REGEX_OVALUE ]]; then
+                    ring_clock=${BASH_REMATCH[1]};
+                    ring_volt=${BASH_REMATCH[2]};
+                    ring_temp=${BASH_REMATCH[3]};
+                    printf "${GRAY}ring_osc%s:${RESET}  %-10s   %-11s %-11s\n" "$SRC" "$ring_clock MHz" "$ring_volt V" "$ring_temp C"
+                fi
+            done
+
         fi
 
         if ( ((pi4)) || ((pi5)) ) && ((PMIC)); then
 
             printf "\n${PURPLE}pmic\n"
 
-            if ((pi5)); then printf "${GRAY}power_reset:${RESET} %-8s\n" "$pmic_reset"; fi
+            if ((pi5)); then
+
+                printf "${GRAY}temp:${RESET}        "
+
+                # Different colors for high temperatures to alert user.
+                if [[ 70 < $pmic_temp ]]; then
+                    if [[ $pmic_temp > 80 ]]; then
+                        echo -ne "${RED}"     # Depleted battery
+                    else
+                        echo -ne "${YELLOW}"  # Low Battery
+                    fi
+                fi
+                printf "%-8s${RESET}\n" "$pmic_temp C";
+            fi
+
+            if ((pi5)) && ((PMIC)) && [ "$pmic_reset" != "00000000" ]; then printf "${GRAY}power_reset:${RESET} %-8s\n" "$pmic_reset"; fi
 
             if ( ((pi4)) || ((pi5)) ) && ((PMIC_VOLTAGES)); then
-                #RTC Battery
+
+                # RTC Battery
 
                 rtc_show=0;
                     pmic_input=$(vcgencmd pmic_read_adc batt_v);
                     REGEX_PMIC='BATT_V volt.*=([0-9.]{4}).*[AV].*'
                     if [[ $pmic_input =~ $REGEX_PMIC ]]; then rtc_voltage=${BASH_REMATCH[1]}; rtc_show=1; fi
                 if ((rtc_show)); then
+                    rtc_chargingv=$(($(cat /sys/devices/platform/soc/soc:rpi_rtc/rtc/rtc0/charging_voltage) / 1000))
+
                     printf "${GRAY}rtc battery:${RESET} "
-                    if [[ $rtc_voltage < 2.60 ]]; then
-                        if [[ $rtc_voltage < 2.50 ]]; then
+                    if [[ $rtc_voltage < 2.80 ]]; then
+                        if [[ $rtc_voltage < 2.60 ]]; then
                             echo -ne "${RED}"     # Depleted battery
                         else
                             echo -ne "${YELLOW}"  # Low Battery
                         fi
                     fi
 
-                    printf "%-12s${RESET}\n" "$rtc_voltage V"
-                fi;
+                    printf "%-11s${RESET} " "$rtc_voltage V"
 
-                #External 5V power supply
+                    if [ $rtc_chargingv -gt 0 ]; then
+                        echo -e "${ORANGE}(charging at $rtc_chargingv mV)${RESET}"
+                    else
+                        echo -e "${GRAY}(charging disabled)${RESET}"
+                    fi
+                fi
+
+                # External 5V power supply
 
                 ext5v_show=0;
                     pmic_input=$(vcgencmd pmic_read_adc ext5v_v);
@@ -412,22 +509,25 @@ else
                     printf "  %-11s${RESET}\n" "$ext5v_voltage V"
                 fi
 
-                # PMIC Voltages
+                # PMIC Voltages & Currents
 
-                arr_pdata=( 'VDD_CORE' 'DDR_VDDQ' 'DDR_VDD2' 'DDR_VDDQ' 'HDMI' )
+                pmic_totalp=0
 
+                arr_pdata=( 'VDD_CORE' 'DDR_VDD2' 'DDR_VDDQ' 'HDMI' '3V3_SYS' '1V8_SYS' '1V1_SYS' '3V3_DAC' '3V3_ADC' '3V7_WL_SW' '0V8_AON' '0V8_SW' )
                 for SRC in "${arr_pdata[@]}"; do
                     label=$(echo $SRC | tr '[:upper:]' '[:lower:]')
                     volt=$(vcgencmd pmic_read_adc "${label}_v")
                     current=$(vcgencmd pmic_read_adc "${label}_a")
                     REGEX_VOLT="${SRC}_V volt.*=(.*)[AV].*"
                     REGEX_CURRENT="${SRC}_A current.*=(.*)[AV].*"
-                    #echo "${label}_v volt=$volt RE=$REGEX_VOLT"
                     if [[ $volt =~ $REGEX_VOLT ]]; then pmic_voltage=${BASH_REMATCH[1]}; fi
                     if [[ $current =~ $REGEX_CURRENT ]]; then pmic_current=${BASH_REMATCH[1]}; fi
                     pmic_power=$(echo "$pmic_voltage $pmic_current" | awk '{printf "%.4f", $1*$2}')
+                    pmic_totalp=$(echo $pmic_totalp + $pmic_power | bc)
                     printf "${GRAY}%-10s${RESET}   %-11s %-11s (%-11s)\n" "$label:" "${pmic_voltage:0:6} V" "${pmic_current:0:6} A" "${pmic_power:0:6} Watt"
                 done
+
+                printf "${GRAY}total:${RESET}       %-11s${RESET}\n" "$pmic_totalp Watt"
                 fi
 
         fi
