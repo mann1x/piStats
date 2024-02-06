@@ -58,6 +58,7 @@ v1.11
    - Added PWM value and percentage for fan
    . Added Ring Oscillators section in Summary mode
    - Added toggles for each Ring Oscillator in Continuous mode
+
 v1.1
    - First release with new features
    - Support for Pi5 and PMIC
