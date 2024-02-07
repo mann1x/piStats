@@ -47,6 +47,10 @@ Some options are hidden and can be toggled only inside the script:
 
 ## Changelog
 
+v1.13
+   - Fixed missing VSOC in Continuous mode
+   - Fixed formatting of Ring Oscillators in Continuous mode
+
 v1.12
    - Fixed min and max clocks showing "N/A" when not available
 

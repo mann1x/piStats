@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PISTATS_REL=1.12
+PISTATS_REL=1.13
 
 ### Defauts
 
@@ -180,11 +180,11 @@ if ((CONTINUOUS)); then
     if ((FAN)); then echo -en "fan     "; fi
     if ((PCORE)); then echo -en "pcore     "; fi
     if ((VCORE)); then echo -en "vcore     "; fi
-    if ((VSOC)); then echo -en "vsoc     "; fi
+    if ((VSOC)); then echo -en "vsoc      "; fi
     arr_odata=( )
-    if ((ROSC1)); then arr_odata+=('1'); echo -en "r1clk   r1volt   r1temp "; fi
-    if ((ROSC2)); then arr_odata+=('2'); echo -en "r2clk   r2volt   r2temp "; fi
-    if ((ROSC3)); then arr_odata+=('3'); echo -en "r3clk   r3volt   r3temp "; fi
+    if ((ROSC1)); then arr_odata+=('1'); echo -en "r1clk   r1volt   r1temp  "; fi
+    if ((ROSC2)); then arr_odata+=('2'); echo -en "r2clk   r2volt   r2temp  "; fi
+    if ((ROSC3)); then arr_odata+=('3'); echo -en "r3clk   r3volt   r3temp  "; fi
 
     echo -e "${RESET}"
 
@@ -211,7 +211,7 @@ if ((CONTINUOUS)); then
                     ring_volt=${BASH_REMATCH[2]};
                     ring_temp=${BASH_REMATCH[3]};
                 fi
-                    roscvals+=$(printf "%-7s %-8s %-7s" "$ring_clock" "$ring_volt" "$ring_temp")
+                    roscvals+=$(printf "%-7s %-8s %-8s" "$ring_clock" "$ring_volt" "$ring_temp")
                 sleep $IDELAY;
             done
         fi
@@ -248,6 +248,7 @@ if ((CONTINUOUS)); then
         if ((FAN)); then printf "%-7s " "$fanrpm"; fi
         if ((PCORE)); then printf "%-9s " "$core_power"; fi
         if ((VCORE)); then printf "%-9s " "$core_voltage"; fi
+        if ((VSOC)); then printf "%-9s " "$core_uncached"; fi
 
         if ((ROSC1)) || ((ROSC2)) || ((ROSC3)); then echo -ne $roscvals; fi
 
