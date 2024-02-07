@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PISTATS_REL=1.11
+PISTATS_REL=1.12
 
 ### Defauts
 
@@ -326,10 +326,22 @@ else
                 clock=$(vcgencmd measure_clock $SRC)
                 eval "$SRC"_clock=$((${clock#*=} / 1000000))
             fi
+
             eval "$SRC"_clock_min=$(vcgencmd get_config "${SRC}_freq_min" | cut -d "=" -f 2)
             if [ "$SRC"_clock_min == "0" ]; then "$SRC"_clock_min = "N/A"; fi
-            eval "$SRC"_clock_max=$(vcgencmd get_config "${SRC}_freq" | cut -d "=" -f 2)
-            if [ "$SRC"_clock_max == "0" ]; then "$SRC"_clock_max = "N/A"; fi
+
+            this_clock_min=$(vcgencmd get_config "${SRC}_freq_min" | cut -d "=" -f 2)
+            if [ "$this_clock_min" == "0" ]; then
+                eval "$SRC"_clock_min="N/A"
+            else
+                eval "$SRC"_clock_min='"${this_clock_min} MHz"'
+            fi
+            this_clock_max=$(vcgencmd get_config "${SRC}_freq" | cut -d "=" -f 2)
+            if [ "$this_clock_max" == "0" ]; then
+                eval "$SRC"_clock_max="N/A"
+            else
+                eval "$SRC"_clock_max='"${this_clock_max} MHz"'
+            fi
             sleep $IDELAYSMALL
         done
 
@@ -392,12 +404,12 @@ else
     printf "${GRAY}gpu:${RESET}  %-10s      %-10s     %-10s\n" "$core_clock MHz" "$core_clock_min MHz" "$core_clock_max MHz"
 
     if ((VERBOSE)); then
-        if ((hevcblock)); then printf "${GRAY}hevc:${RESET} %-10s      %-10s     %-10s\n" "$hevc_clock MHz" "$hevc_clock_min MHz" "$hevc_clock_max MHz"; fi
-        if ((h264block)); then printf "${GRAY}h264:${RESET} %-10s      %-10s     %-10s\n" "$h264_clock MHz" "$h264_clock_min MHz" "$h264_clock_max MHz"; fi
+        if ((hevcblock)); then printf "${GRAY}hevc:${RESET} %-10s      %-10s     %-10s\n" "$hevc_clock MHz" "$hevc_clock_min" "$hevc_clock_max"; fi
+        if ((h264block)); then printf "${GRAY}h264:${RESET} %-10s      %-10s     %-10s\n" "$h264_clock MHz" "$h264_clock_min" "$h264_clock_max"; fi
 
-        printf "${GRAY}isp:${RESET}  %-10s      %-10s     %-10s\n" "$isp_clock MHz" "$isp_clock_min MHz" "$isp_clock_max MHz"
-        printf "${GRAY}v3d:${RESET}  %-10s      %-10s     %-10s\n" "$v3d_clock MHz" "$v3d_clock_min MHz" "$v3d_clock_max MHz"
-        printf "${GRAY}ram:${RESET}  %-10s      %-10s     %-10s\n" "" "$sdram_clock_min MHz" "$sdram_clock_max MHz"
+        printf "${GRAY}isp:${RESET}  %-10s      %-10s     %-10s\n" "$isp_clock MHz" "$isp_clock_min" "$isp_clock_max"
+        printf "${GRAY}v3d:${RESET}  %-10s      %-10s     %-10s\n" "$v3d_clock MHz" "$v3d_clock_min" "$v3d_clock_max"
+        printf "${GRAY}ram:${RESET}  %-10s      %-10s     %-10s\n" "" "$sdram_clock_min" "$sdram_clock_max"
         printf "${GRAY}sd:${RESET}   %-10s\n"                      "$sd_clock MHz"
 
         if ((CPUFREQ)); then

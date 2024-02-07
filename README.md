@@ -47,6 +47,9 @@ Some options are hidden and can be toggled only inside the script:
 
 ## Changelog
 
+v1.12
+   - Fixed min and max clocks showing "N/A" when not available
+
 v1.11
    - Added battery charging status
    - Made Summary layout more compact
