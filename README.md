@@ -71,6 +71,9 @@ Some options are hidden and can be toggled only inside the script:
 
 ## Changelog
 
+v1.16
+   - Fixed bug with update release check
+
 v1.15
    - Fixed bug with print column headers
    - Fixed bug with PWM Fan values without verbose mode

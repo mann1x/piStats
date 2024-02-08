@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PISTATS_REL=1.15
+PISTATS_REL=1.16
 
 ### Defauts
 
@@ -186,8 +186,7 @@ if ((UPDATE_CHECK)); then
     last_version=$(curl --silent --connect-timeout 5 "https://api.github.com/repos/mann1x/piStats/releases/latest" |
     grep '"tag_name":' |
     sed -E 's/.*"([^"]+)".*/\1/')
-#    PISTATS_REL=v1.14
-    if [[ "$last_version" == "$PISTATS_REL" ]]; then
+    if [[ "$last_version" == "v$PISTATS_REL" ]]; then
         echo -e "${GREEN}You are running the latest version${RESET}"
     elif [[ "$last_version" == "" ]]; then
         echo -e "${RED}There was an error checking for the latest release!${RESET}"
