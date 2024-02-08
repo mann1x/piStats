@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PISTATS_REL=1.13
+PISTATS_REL=1.14
 
 ### Defauts
 
@@ -28,15 +28,27 @@ ROSC3=0
 GPU_SPLIT=0
 PMIC=1
 PMIC_VOLTAGES=1
+THROTTLED_CHECK=0
+PRINT_HEADERS=1
+PRINT_CHEADERS=0
 
 ### Arguments
 CONTINUOUS=0
+PRINT_COUNT=0
+linestoprint=0
 
-while getopts d:i:cqorvtfpjklbh flag
+### getopts
+OPTERR=0
+
+while getopts ":d:i:u:cqorvtfpjklbsaxh" flag
 do
     case "${flag}" in
-        d) DELAY=${OPTARG};;
-        i) IDELAY=${OPTARG};;
+        d) DELAY=${OPTARG//[!0-9.]/}; check=$DELAY;
+            if [[ $check  == "" ]] || [[ $check == "." ]]; then echo "Invalid value $OPTARG given to -$flag" >&2; exit 1; fi;;
+        i) IDELAY=${OPTARG//[!0-9.]/}; check=$IDELAY;
+            if [[ $check  == "" ]] || [[ $check == "." ]]; then echo "Invalid value $OPTARG given to -$flag" >&2; exit 1; fi;;
+        u) PRINT_COUNT=1;linestoprint=${OPTARG//[!0-9]/}; check=$linestoprint;
+            if [[ $check  == "" ]]; then echo "Invalid value $OPTARG given to -$flag" >&2; exit 1; fi;;
         c) CONTINUOUS=$((1-CONTINUOUS));;
         q) CPUFREQ=$((1-CPUFREQ));;
         o) VSOC=$((1-VSOC));;
@@ -49,6 +61,9 @@ do
         k) ROSC2=$((1-ROSC2));;
         l) ROSC3=$((1-ROSC3));;
         b) RING_OSC=$((1-RING_OSC));;
+        s) PRINT_CHEADERS=$((1-PRINT_CHEADERS));;
+        x) PRINT_HEADERS=$((1-PRINT_HEADERS));;
+        a) THROTTLED_CHECK=$((1-THROTTLED_CHECK));;
         h) echo -e "piStats v$PISTATS_REL\n"
            echo -e "Usage: piStats [OPTIONS]...\n"
            echo -e "Options:\n"
@@ -66,11 +81,19 @@ do
            echo -e "-k: toggle to show Ring Oscillator 2 in continuous mode"
            echo -e "-l: toggle to show Ring Oscillator 3 in continuous mode"
            echo -e "-b: toggle to show Ring Oscillators in Summary mode"
-           echo -e "-h: will show this help screen"
+           echo -e "-s: toggle to print column headers periodically in Continuous mode"
+           echo -e "-a: toggle to check throttled status periodically in Continuous mode"
+           echo -e "-x: suppress printing of all headers"
+           echo -e "-u <NN>: print only <NN> times the stats in Continuous mode"
+           echo -e "-h: will show this help screen\n"
            exit
            ;;
-        :) echo -e "${RED}Option -${OPTARG} requires an argument.";;
-            ?) echo -e "${RED}Invalid option -${OPTARG}.";;
+        :) echo -e "${RED}Option -$OPTARG requires an argument. " >&2
+           exit 2
+           ;;
+            ?) echo -e "${RED}Invalid option -$OPTARG, check the supported switches with -h." >&2
+           exit 3
+           ;;
     esac
 done
 
@@ -112,7 +135,7 @@ PCORE=0
 if ((pi5)); then
     hevcblock=$((1-hevcblock))
     if ((POWER)) && ((PMIC)) then PCORE=1; fi
-    if [ ! -d "$fandev" ]; then FAN=0; fi
+    if [[ ! -d "$fandev" ]]; then FAN=0; fi
 fi
 
 if ((pi4)); then
@@ -124,10 +147,10 @@ fi
 if ((CPUFREQ)); then
     SUDOSTR=("")
     MYEUID=$(bash <<<'echo $EUID' 2>/dev/null)
-    if [ "$MYEUID" != "0" ]; then
+    if [[ "$MYEUID" != "0" ]]; then
         suprompt=$(sudo -nv 2>&1)
         YESIMROOT=0
-        if [ $? -eq 0 ]; then
+        if [[ $? -eq 0 ]]; then
             # Success exit code of sudo-command is 0
             YESIMROOT=1
             SUDOSTR=("sudo -n ")
@@ -144,18 +167,23 @@ fi
 
 # Print out
 
-echo -e "${GRAY}piStats v$PISTATS_REL: ${YELLOW}$hostname ${ORANGE}[$modelname]"
-if ((VERBOSE)); then
-    echo -e "${RESET}${GRAY}Rel: ${CYAN}$kernrel ${GRAY}Ver: ${CYAN}$kernver"
+### Headers
+
+if ((PRINT_HEADERS)); then
+    echo -e "${GRAY}piStats v$PISTATS_REL: ${YELLOW}$hostname ${ORANGE}[$modelname]"
+    if ((VERBOSE)); then
+        echo -e "${RESET}${GRAY}Rel: ${CYAN}$kernrel ${GRAY}Ver: ${CYAN}$kernver"
+    fi
+    echo -en "${RESET}"
 fi
-echo -en "${RESET}"
 
 ### Main
 
 # Throttled status
-TSTATUS=$(vcgencmd get_throttled | cut -d "=" -f 2)
-IFS=","
-for TBITMAP in \
+function throttled_status () {
+    TSTATUS=$(vcgencmd get_throttled | cut -d "=" -f 2)
+    IFS=","
+    for TBITMAP in \
         00,"currently under-voltage" \
         01,"ARM frequency currently capped" \
         02,"currently throttled" \
@@ -164,31 +192,51 @@ for TBITMAP in \
         17,"ARM frequency capping has occurred since last reboot" \
         18,"throttling has occurred since last reboot" \
         19,"soft temperature reached since last reboot"
-do set -- $TBITMAP
-    if [ $(($TSTATUS & 1 << $1)) -ne 0 ] ; then echo -e "${RED}Alert: ${YELLOW}$2"; fi
-done
-sleep $IDELAY
+    do set -- $TBITMAP
+        if [[ $(($TSTATUS & 1 << $1)) -ne 0 ]] ; then echo -e "${RED}Alert: ${YELLOW}$2${RESET}"; fi
+    done
+    sleep $IDELAY
+}
 
 # Check command-line flag for continuous mode...
 if ((CONTINUOUS)); then
-    echo -e "${GRAY}entering continuous mode refresh every $DELAY seconds..."
 
-    echo -en "${PURPLE}"
-    if ((TEMP)); then echo -en "temp    "; fi
-    echo -en "clock   "
-    if ((CPUFREQ)); then echo -en "cpufreq      "; fi
-    if ((FAN)); then echo -en "fan     "; fi
-    if ((PCORE)); then echo -en "pcore     "; fi
-    if ((VCORE)); then echo -en "vcore     "; fi
-    if ((VSOC)); then echo -en "vsoc      "; fi
-    arr_odata=( )
-    if ((ROSC1)); then arr_odata+=('1'); echo -en "r1clk   r1volt   r1temp  "; fi
-    if ((ROSC2)); then arr_odata+=('2'); echo -en "r2clk   r2volt   r2temp  "; fi
-    if ((ROSC3)); then arr_odata+=('3'); echo -en "r3clk   r3volt   r3temp  "; fi
+    if ((PRINT_HEADERS)); then echo -e "${GRAY}entering continuous mode refresh every $DELAY seconds...${RESET}"; fi
 
-    echo -e "${RESET}"
+    disprows="$(tput lines)"
+    cntrows=0
+    totalrows=1
+
+    function print_cheaders {
+        echo -en "${PURPLE}"
+        if ((TEMP)); then echo -en "temp    "; fi
+        echo -en "clock   "
+        if ((CPUFREQ)); then echo -en "cpufreq      "; fi
+        if ((FAN)); then echo -en "fan     "; fi
+        if ((PCORE)); then echo -en "pcore     "; fi
+        if ((VCORE)); then echo -en "vcore     "; fi
+        if ((VSOC)); then echo -en "vsoc      "; fi
+        arr_odata=( )
+        if ((ROSC1)); then arr_odata+=('1'); echo -en "r1clk   r1volt   r1temp  "; fi
+        if ((ROSC2)); then arr_odata+=('2'); echo -en "r2clk   r2volt   r2temp  "; fi
+        if ((ROSC3)); then arr_odata+=('3'); echo -en "r3clk   r3volt   r3temp  "; fi
+
+        echo -e "${RESET}"
+    }
 
     while true; do
+
+        if ( [[ $cntrows -eq 0 ]] && ((PRINT_HEADERS)) ) || ( [[ $cntrows -gt $(($disprows-1)) ]] &&
+            ((THROTTLED_CHECK)) || ((PRINT_CHEADERS))); then
+
+            if ((THROTTLED_CHECK)) || [[ $cntrows -eq 0 ]]; then throttled_status; fi
+
+            if ((PRINT_CHEADERS)) || [[ $cntrows -eq 0 ]]; then print_cheaders; fi
+
+            cntrows=0
+            disprows="$(tput lines)"
+        fi
+
         if ((CPUFREQ)); then
             scaling_freq=$(bash -c "${SUDOSTR}cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null")
             scaling_freq=$((${scaling_freq#*=} / 1000))
@@ -254,12 +302,18 @@ if ((CONTINUOUS)); then
 
         echo -en "\n"
 
+        ((cntrows++))
+        ((totalrows++))
+
+        if ((PRINT_COUNT)) && [[ $totalrows -gt $linestoprint ]]; then exit; fi
         sleep $DELAY
     done
 
 # ...otherwise, print stats once.
 
 else
+
+    if ((PRINT_HEADERS)); then throttled_status; fi
 
     # Kernel scaling scheduler clocks
     if ((CPUFREQ)); then
@@ -323,22 +377,22 @@ else
         if ((hevcblock)) then arr_gclocks+=('hevc'); fi
 
         for SRC in "${arr_gclocks[@]}"; do
-            if [ SRC != 'sdram' ]; then
+            if [[ SRC != 'sdram' ]]; then
                 clock=$(vcgencmd measure_clock $SRC)
                 eval "$SRC"_clock=$((${clock#*=} / 1000000))
             fi
 
             eval "$SRC"_clock_min=$(vcgencmd get_config "${SRC}_freq_min" | cut -d "=" -f 2)
-            if [ "$SRC"_clock_min == "0" ]; then "$SRC"_clock_min = "N/A"; fi
+            if [[ "$SRC"_clock_min == "0" ]]; then "$SRC"_clock_min = "N/A"; fi
 
             this_clock_min=$(vcgencmd get_config "${SRC}_freq_min" | cut -d "=" -f 2)
-            if [ "$this_clock_min" == "0" ]; then
+            if [[ "$this_clock_min" == "0" ]]; then
                 eval "$SRC"_clock_min="N/A"
             else
                 eval "$SRC"_clock_min='"${this_clock_min} MHz"'
             fi
             this_clock_max=$(vcgencmd get_config "${SRC}_freq" | cut -d "=" -f 2)
-            if [ "$this_clock_max" == "0" ]; then
+            if [[ "$this_clock_max" == "0" ]]; then
                 eval "$SRC"_clock_max="N/A"
             else
                 eval "$SRC"_clock_max='"${this_clock_max} MHz"'
@@ -420,7 +474,7 @@ else
 
     printf "\n${PURPLE}voltages${RESET}"
 
-        if ([ "$over_voltage_delta" != "0" ] || [ "$over_voltage" != "0" ] || [ "$over_voltage_min" != "0" ]) && ((VERBOSE)); then
+        if ( [[ "$over_voltage_delta" != "0" ]] || [[ "$over_voltage" != "0" ]] || [[ "$over_voltage_min" != "0" ]] ) && ((VERBOSE)); then
             printf "${YELLOW}          OC ${GRAY}(ov set - min - delta): ${ORANGE}%s${GRAY}-${RESET}${ORANGE}%s${GRAY}-${RESET}${GREEN}%s${RESET}\n" "$over_voltage" "$over_voltage_min" "$over_voltage_delta mV"
     else
         printf "\n"
@@ -472,7 +526,7 @@ else
                 printf "%-8s${RESET}\n" "$pmic_temp C";
             fi
 
-            if ((pi5)) && ((PMIC)) && [ "$pmic_reset" != "00000000" ]; then printf "${GRAY}power_reset:${RESET} %-8s\n" "$pmic_reset"; fi
+            if ((pi5)) && ((PMIC)) && [[ "$pmic_reset" != "00000000" ]]; then printf "${GRAY}power_reset:${RESET} %-8s\n" "$pmic_reset"; fi
 
             if ( ((pi4)) || ((pi5)) ) && ((PMIC_VOLTAGES)); then
 
@@ -496,7 +550,7 @@ else
 
                     printf "%-11s${RESET} " "$rtc_voltage V"
 
-                    if [ $rtc_chargingv -gt 0 ]; then
+                    if [[ $rtc_chargingv -gt 0 ]]; then
                         echo -e "${ORANGE}(charging at $rtc_chargingv mV)${RESET}"
                     else
                         echo -e "${GRAY}(charging disabled)${RESET}"
