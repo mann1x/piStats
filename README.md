@@ -23,51 +23,59 @@ Running the script without any command-line arguments will display a simple over
 
 - `-i <NN>`: continuous mode, delay in seconds between stats pooling (default 0.2 seconds).
 
-- `-v`: enables verbosity, which will show additional information (namely, the other GPU clock speeds, SD card reader clock speed, RAM voltages) in Summary mode.
+- `-v`: enables verbosity, which will show additional information (namely, the other GPU clock speeds, SD card reader clock speed, RAM voltages, etc) in Summary mode and the headers.
 
-- `-r`: toggle to show ARM Core voltage (vcore)
+- `-r`: toggle to show ARM Core voltage (vcore).
 
-- `-o`: toggle to SOC voltage (vsoc)
+- `-o`: toggle to SOC voltage (vsoc).
 
-- `-q`: toggle to kernel cpufreq driver core clocks (requested/reported)
+- `-q`: toggle to kernel cpufreq driver core clocks (requested/reported).
 
-- `-t`: toggle to SOC temperature
+- `-t`: toggle to SOC temperature.
 
-- `-f`: toggle to Fan rpm speed
+- `-f`: toggle to Fan rpm speed.
 
-- `-p`: toggle to show ARM Core power consumption (pcore)
+- `-p`: toggle to show ARM Core power consumption (pcore).
 
-- `-j`: toggle to show Ring Oscillator 1 in continuous mode
+- `-j`: toggle to show Ring Oscillator 1 in continuous mode.
 
-- `-k`: toggle to show Ring Oscillator 2 in continuous mode
+- `-k`: toggle to show Ring Oscillator 2 in continuous mode.
 
-- `-l`: toggle to show Ring Oscillator 3 in continuous mode
+- `-l`: toggle to show Ring Oscillator 3 in continuous mode.
 
-- `-b`: toggle to show Ring Oscillators in Summary mode
+- `-b`: toggle to show Ring Oscillators in Summary mode.
 
-- `-s`: toggle to print column headers periodically in Continuous mode
+- `-s`: toggle to print column headers periodically in Continuous mode.
 
-- `-a`: toggle to check throttled status periodically in Continuous mode
+- `-a`: toggle to check throttled status periodically in Continuous mode.
 
-- `-x`: suppress printing of all headers
+- `-x`: suppress printing of all headers.
 
-- `-u <NN>`: print only <NN> times the stats in Continuous mode
+- `-u <NN>`: print only <NN> times the stats in Continuous mode.
 
-- `-h`: prints a short summary of the command-line switches
+- `-w`: check if you are running the latest release and exit.
+
+- `-h`: prints a short summary of the command-line switches.
 
 The default values and toggle states can be modified directly inside the script; 0 to disable, 1 to enable.
 
 Some options are hidden and can be toggled only inside the script: 
 
-- `PMIC`: toggle all queries to the PMIC 
+- `PMIC`: toggle all queries to the PMIC.
 
-- `PMIC_VOLTAGES`: toggle show PMIC voltage in Summary mode
+- `PMIC_VOLTAGES`: toggle show PMIC voltage in Summary mode.
 
-- `GPU_SPLIT`: toggle show GPU split in Summary mode
+- `GPU_SPLIT`: toggle show GPU split in Summary mode.
 
-- `IDELAYSMALL`: smaller delay between stats pooling for some stats in Summary mode, to avoid becoming too slow
+- `IDELAYSMALL`: smaller delay between stats pooling for some stats in Summary mode, to avoid becoming too slow.
 
 ## Changelog
+
+v1.15
+   - Fixed bug with print column headers
+   - Fixed bug with PWM Fan values without verbose mode
+   - Fixed a bug with OV values and improved display
+   - Added a switch to check for the latest release on Github
 
 v1.14
    - Fixed over voltage values display

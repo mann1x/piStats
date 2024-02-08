@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PISTATS_REL=1.14
+PISTATS_REL=1.15
 
 ### Defauts
 
@@ -35,12 +35,13 @@ PRINT_CHEADERS=0
 ### Arguments
 CONTINUOUS=0
 PRINT_COUNT=0
+UPDATE_CHECK=0
 linestoprint=0
 
 ### getopts
 OPTERR=0
 
-while getopts ":d:i:u:cqorvtfpjklbsaxh" flag
+while getopts ":d:i:u:cqorvtfpjklbsxawh" flag
 do
     case "${flag}" in
         d) DELAY=${OPTARG//[!0-9.]/}; check=$DELAY;
@@ -64,13 +65,14 @@ do
         s) PRINT_CHEADERS=$((1-PRINT_CHEADERS));;
         x) PRINT_HEADERS=$((1-PRINT_HEADERS));;
         a) THROTTLED_CHECK=$((1-THROTTLED_CHECK));;
+        w) UPDATE_CHECK=$((1-UPDATE_CHECK));;
         h) echo -e "piStats v$PISTATS_REL\n"
            echo -e "Usage: piStats [OPTIONS]...\n"
            echo -e "Options:\n"
            echo -e "-c: Continuous output mode, default is Summary"
            echo -e "-d <NN>: set continuous mode delay in seconds between updates (default 8 seconds)"
            echo -e "-i <NN>: delay in seconds between stats pooling (default 0.2 seconds)"
-           echo -e "-v: toggle verbose mode for summary mode"
+           echo -e "-v: toggle verbose mode for summary mode and headers"
            echo -e "-r: toggle to show ARM Core voltage (vcore)"
            echo -e "-o: toggle to show SOC voltage (vsoc)"
            echo -e "-q: toggle to show kernel cpufreq driver core clocks (requested/reported)"
@@ -82,9 +84,10 @@ do
            echo -e "-l: toggle to show Ring Oscillator 3 in continuous mode"
            echo -e "-b: toggle to show Ring Oscillators in Summary mode"
            echo -e "-s: toggle to print column headers periodically in Continuous mode"
-           echo -e "-a: toggle to check throttled status periodically in Continuous mode"
+           echo -e "-a: toggle to check throttled status periodically in Continuous mode\n"
            echo -e "-x: suppress printing of all headers"
-           echo -e "-u <NN>: print only <NN> times the stats in Continuous mode"
+           echo -e "-u <NN>: print only <NN> times the stats in Continuous mode\n"
+           echo -e "-w: check if this is the latest release and exit"
            echo -e "-h: will show this help screen\n"
            exit
            ;;
@@ -177,6 +180,23 @@ if ((PRINT_HEADERS)); then
     echo -en "${RESET}"
 fi
 
+### Check for an updated release
+
+if ((UPDATE_CHECK)); then
+    last_version=$(curl --silent --connect-timeout 5 "https://api.github.com/repos/mann1x/piStats/releases/latest" |
+    grep '"tag_name":' |
+    sed -E 's/.*"([^"]+)".*/\1/')
+#    PISTATS_REL=v1.14
+    if [[ "$last_version" == "$PISTATS_REL" ]]; then
+        echo -e "${GREEN}You are running the latest version${RESET}"
+    elif [[ "$last_version" == "" ]]; then
+        echo -e "${RED}There was an error checking for the latest release!${RESET}"
+    else
+        echo -e "${YELLOW}There is a new release available: ${GREEN}$last_version${RESET}"
+    fi
+    exit
+fi
+
 ### Main
 
 # Throttled status
@@ -227,7 +247,7 @@ if ((CONTINUOUS)); then
     while true; do
 
         if ( [[ $cntrows -eq 0 ]] && ((PRINT_HEADERS)) ) || ( [[ $cntrows -gt $(($disprows-1)) ]] &&
-            ((THROTTLED_CHECK)) || ((PRINT_CHEADERS))); then
+            ( ((THROTTLED_CHECK)) || ((PRINT_CHEADERS)) ) ); then
 
             if ((THROTTLED_CHECK)) || [[ $cntrows -eq 0 ]]; then throttled_status; fi
 
@@ -362,14 +382,6 @@ else
            pmic_temp=$(vcgencmd measure_temp pmic); pmic_temp=${pmic_temp:5:4}
         fi
 
-        if ((pi5)) && ((FAN)); then
-            # Fan rpm.
-            fanpwm=$(cat $fansys/pwm1 2>/dev/null)
-            fanperc=$((fanpwm * 100 / 255))
-            sleep $IDELAYSMALL
-        fi
-
-
         # Additional clock speeds and clock settings.
         arr_gclocks=( 'isp' 'v3d' 'sdram')
 
@@ -416,21 +428,29 @@ else
         done
 
         # OverVoltage
-        over_voltage=$(vcgencmd get_config over_voltage); over_voltage=${over_voltage:13:1};
-        over_voltage_delta=$(vcgencmd get_config over_voltage_delta); over_voltage_delta=${over_voltage_delta:19:5};
+        over_voltage=$(vcgencmd get_config over_voltage | cut -d "=" -f 2);
+        over_voltage_delta=$(vcgencmd get_config over_voltage_delta | cut -d "=" -f 2);
         over_voltage_delta=$((${over_voltage_delta#*=} / 1000))
-        over_voltage_min=$(vcgencmd get_config over_voltage_min); over_voltage_min=${over_voltage_min:17:1};
+        over_voltage_min=$(vcgencmd get_config over_voltage_min | cut -d "=" -f 2);
 
         # Pi5 PMIC Reset bit
         if ((pi5)) && ((PMIC)); then pmic_reset=$(hexdump -s 0 -n 1 -e '1/1 "%08x" "\n"' < /proc/device-tree/chosen/power/power_reset); fi
 
     fi
 
+    if ((pi5)) && ((FAN)); then
+        # Fan rpm.
+        fanpwm=$(cat $fansys/pwm1 2>/dev/null)
+        fanperc=$((fanpwm * 100 / 255))
+        sleep $IDELAYSMALL
+    fi
+
+
     # CPU and Core clock settings
-    arm_clock_max=$(vcgencmd get_config arm_freq); arm_clock_max=${arm_clock_max:9:4};
-    arm_clock_min=$(vcgencmd get_config arm_freq_min); arm_clock_min=${arm_clock_min:13:4};
-    core_clock_max=$(vcgencmd get_config core_freq); core_clock_max=${core_clock_max:10:4};
-    core_clock_min=$(vcgencmd get_config core_freq_min); core_clock_min=${core_clock_min:14:4};
+    arm_clock_max=$(vcgencmd get_config arm_freq | cut -d "=" -f 2)
+    arm_clock_min=$(vcgencmd get_config arm_freq_min | cut -d "=" -f 2);
+    core_clock_max=$(vcgencmd get_config core_freq | cut -d "=" -f 2);
+    core_clock_min=$(vcgencmd get_config core_freq_min | cut -d "=" -f 2);
 
     # Final output.
 
@@ -475,7 +495,7 @@ else
     printf "\n${PURPLE}voltages${RESET}"
 
         if ( [[ "$over_voltage_delta" != "0" ]] || [[ "$over_voltage" != "0" ]] || [[ "$over_voltage_min" != "0" ]] ) && ((VERBOSE)); then
-            printf "${YELLOW}          OC ${GRAY}(ov set - min - delta): ${ORANGE}%s${GRAY}-${RESET}${ORANGE}%s${GRAY}-${RESET}${GREEN}%s${RESET}\n" "$over_voltage" "$over_voltage_min" "$over_voltage_delta mV"
+            printf "${YELLOW}          OC ${GRAY}(ov [set] [min] [delta]): ${GRAY}[${ORANGE}%s${GRAY}]${RESET}  ${GRAY}[${ORANGE}%s${GRAY}] ${GRAY}[${GREEN}%s${GRAY}]${RESET}\n" "$over_voltage" "$over_voltage_min" "$over_voltage_delta mV"
     else
         printf "\n"
         fi
@@ -484,7 +504,7 @@ else
 
     if ((VERBOSE)); then
 
-        printf "${GRAY}   mem (core - i/o - phy):${RESET} %-4s${GRAY}-${RESET}%-4s${GRAY}-${RESET}%-4s V\n" "$sdram_c_voltage" "$sdram_i_voltage" "$sdram_p_voltage"
+        printf "${GRAY}   mem ([core] [i/o] [phy]):${RESET} ${GRAY}[${RESET}%-4s${GRAY}]${RESET} ${GRAY}[${RESET}%-4s${GRAY}]${RESET} ${GRAY}[${RESET}%-4s${GRAY}]${RESET}\n" "$sdram_c_voltage V" "$sdram_i_voltage V" "$sdram_p_voltage V"
 
         if ((pi4)) || ((pi5)); then printf "${GRAY}soc:${RESET}  %-11s\n" "$soc_voltage V"; fi
 
